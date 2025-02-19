@@ -3,11 +3,14 @@ import { useState } from 'react';
 import Layout from '../components/Layout';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { pipeline } from "@huggingface/transformers";
+import { toast } from "sonner";
 
 const Index = () => {
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [results, setResults] = useState<{ disease: string; confidence: number } | null>(null);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -18,15 +21,68 @@ const Index = () => {
         setPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+      // Reset results when new image is uploaded
+      setResults(null);
     }
   };
 
   const handleAnalyze = async () => {
-    // Placeholder for analysis functionality
-    setAnalyzing(true);
-    setTimeout(() => {
+    if (!image) return;
+
+    try {
+      setAnalyzing(true);
+      toast.info("Initializing disease detection model...");
+
+      // Initialize the image classification pipeline
+      const classifier = await pipeline(
+        "image-classification",
+        "onnx-community/mobilenetv4_conv_small.e2400_r224_in1k",
+        { device: "webgpu" }
+      );
+
+      toast.info("Analyzing leaf image...");
+      const imageUrl = URL.createObjectURL(image);
+      const output = await classifier(imageUrl);
+
+      // Get the top prediction
+      const topResult = output[0];
+      
+      // Map the result to a more user-friendly format
+      // Note: In a production environment, you'd want to map the model's output
+      // to specific potato plant diseases. This is a simplified example.
+      setResults({
+        disease: topResult.label,
+        confidence: topResult.score * 100
+      });
+
+      toast.success("Analysis complete!");
+    } catch (error) {
+      console.error("Error during analysis:", error);
+      toast.error("Error analyzing image. Please try again.");
+    } finally {
       setAnalyzing(false);
-    }, 2000);
+    }
+  };
+
+  const getRecommendations = (disease: string) => {
+    // This would be expanded with real recommendations based on the disease
+    const recommendations = {
+      "healthy": [
+        "Continue regular maintenance",
+        "Monitor for early signs of disease",
+        "Maintain proper irrigation"
+      ],
+      "default": [
+        "Isolate affected plants",
+        "Consider fungicide treatment",
+        "Improve air circulation",
+        "Adjust watering schedule"
+      ]
+    };
+
+    return disease.toLowerCase().includes("healthy") 
+      ? recommendations.healthy 
+      : recommendations.default;
   };
 
   return (
@@ -83,14 +139,35 @@ const Index = () => {
           <Card className="p-6">
             <h2 className="text-subtitle-1 font-bold mb-4">1.1 Analysis Results</h2>
             <div className="space-y-4 text-body">
-              <p>Upload an image to see the analysis results.</p>
+              {results ? (
+                <>
+                  <div className="space-y-2">
+                    <p className="font-bold">Detected Condition:</p>
+                    <p>{results.disease}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="font-bold">Confidence Level:</p>
+                    <p>{results.confidence.toFixed(2)}%</p>
+                  </div>
+                </>
+              ) : (
+                <p>Upload an image to see the analysis results.</p>
+              )}
             </div>
           </Card>
 
           <Card className="p-6">
             <h2 className="text-subtitle-1 font-bold mb-4">1.2 Recommendations</h2>
             <div className="space-y-4 text-body">
-              <p>Recommendations will appear here after analysis.</p>
+              {results ? (
+                <ul className="list-disc list-inside space-y-2">
+                  {getRecommendations(results.disease).map((rec, index) => (
+                    <li key={index}>{rec}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Recommendations will appear here after analysis.</p>
+              )}
             </div>
           </Card>
         </div>
